@@ -17,3 +17,8 @@ variable "name_prefix" {
     error_message = "name_prefix: lowercase letters, digits and hyphens, up to 12 characters."
   }
 }
+
+variable "vpc_cidr" {
+  description = "Address range of the VPC, for example 10.10.0.0/16"
+  type        = string
+}
