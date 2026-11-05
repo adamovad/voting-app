@@ -38,3 +38,44 @@ jobs:
 
       - name: Validate
         run: terraform validate -no-color
+  
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [vote, result, worker]
+    env:
+      REPO: ${{ vars.NAME_PREFIX }}-${{ matrix.service }}
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Check if the tag already exists
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="$TAG" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.found == 'false'
+
+      - uses: docker/build-push-action@v6
+        if: steps.exists.outputs.found == 'false'
+        with:
+          context: services/${{ matrix.service }}
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          provenance: false
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.REPO }}:${{ env.TAG }}
