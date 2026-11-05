@@ -1,0 +1,72 @@
+name: deploy-env
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      image_tag:
+        type: string
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      TF_VARS: -var-file=envs/${{ inputs.environment }}.tfvars -var=name_prefix=${{ vars.NAME_PREFIX }} -var=image_tag=${{ inputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: eu-north-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      - name: Init
+        run: >
+          terraform init -input=false -no-color
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="key=voting-app/${{ inputs.environment }}/terraform.tfstate"
+          -backend-config="region=eu-north-1"
+          -backend-config="use_lockfile=true"
+
+      - name: Apply
+        run: terraform apply -auto-approve -input=false -no-color $TF_VARS
+
+      - name: Smoke test
+        run: |
+          VOTE_URL=$(terraform output -raw vote_url)
+          RESULT_URL=$(terraform output -raw result_url)
+          for url in "$VOTE_URL/healthz" "$RESULT_URL/healthz"; do
+            echo "Checking $url"
+            curl --fail --silent --show-error --output /dev/null --retry 10 --retry-delay 6 --retry-all-errors "$url"
+          done
+
+      - name: Version check
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -input=false -no-color $TF_VARS
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::error::The plan is not empty (exit code $code). ECS probably rolled back the new version."
+            exit 1
+          fi
