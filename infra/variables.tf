@@ -22,3 +22,25 @@ variable "vpc_cidr" {
   description = "Address range of the VPC, for example 10.10.0.0/16"
   type        = string
 }
+
+variable "image_tag" {
+  description = "Tag of the images to run, for example v1 or a git commit"
+  type        = string
+}
+
+variable "desired_count" {
+  description = "Number of tasks per service"
+  type        = number
+}
+
+variable "option_a" {
+  description = "First option on the vote page"
+  type        = string
+  default     = "ביבי"
+}
+
+variable "option_b" {
+  description = "Second option on the vote page"
+  type        = string
+  default     = "אייזנקוט"
+}

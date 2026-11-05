@@ -176,3 +176,59 @@ resource "aws_security_group" "rds" {
     Name = "${local.name}-rds-sg"
   }
 }
+
+resource "aws_lb" "main" {
+  name               = "${local.name}-alb"
+  load_balancer_type = "application"
+  internal           = false
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = [for s in aws_subnet.public : s.id]
+}
+
+resource "aws_lb_target_group" "vote" {
+  name        = "${local.name}-vote"
+  port        = 80
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    path    = "/healthz"
+    matcher = "200"
+  }
+}
+
+resource "aws_lb_target_group" "result" {
+  name        = "${local.name}-result"
+  port        = 80
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    path    = "/healthz"
+    matcher = "200"
+  }
+}
+
+resource "aws_lb_listener" "vote" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.vote.arn
+  }
+}
+
+resource "aws_lb_listener" "result" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 8080
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.result.arn
+  }
+}
